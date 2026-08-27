@@ -15,7 +15,7 @@ additional_redirect_urls = [
   "http://localhost:18765",
   "https://prodg.studio",
   "https://www.prodg.studio",
-  "https://einzelgaanger.github.io/bigfile-transcriber",
+  "https://bigfile-transcriber.onrender.com",
 ]
 
 [auth.email]

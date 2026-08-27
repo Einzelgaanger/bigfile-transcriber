@@ -23,4 +23,6 @@ export interface TranscriptionJob {
   summary: string | null;
   duration_minutes: number | null;
   created_at: string;
+  pdf_path?: string | null;
+  payload?: import('./pdf/types').TranscriptPayload | null;
 }

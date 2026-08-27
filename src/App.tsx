@@ -16,7 +16,7 @@ import {
 import { toast } from 'sonner';
 import { supabase, supabaseReady, type TranscriptionJob } from './lib/supabase';
 import { buildStoragePath, resumableUpload } from './lib/upload';
-import { transcriptToPdf } from './lib/pdf';
+import { deliverTranscriptPdf } from './lib/pdf';
 import SetupEnv from './SetupEnv';
 import HomePage from './pages/HomePage';
 import AuthPage from './pages/AuthPage';
@@ -75,7 +75,10 @@ function Studio({ user }: { user: { id: string; email: string } }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'profile' | 'session'>('profile');
+  const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const watchedJobs = useRef(new Set<string>());
+  const autoPdfDone = useRef(new Set<string>());
 
   const loadJobs = useCallback(async () => {
     const { data } = await supabase
@@ -105,6 +108,33 @@ function Studio({ user }: { user: { id: string; email: string } }) {
     };
   }, [poll, loadJobs]);
 
+  useEffect(() => {
+    for (const job of jobs) {
+      if (job.status === 'pending' || job.status === 'processing') watchedJobs.current.add(job.id);
+    }
+    const ready = jobs.find(
+      (job) =>
+        job.status === 'completed' &&
+        !!job.transcript_text &&
+        watchedJobs.current.has(job.id) &&
+        !autoPdfDone.current.has(job.id),
+    );
+    if (!ready) return;
+    autoPdfDone.current.add(ready.id);
+    void (async () => {
+      setPdfBusyId(ready.id);
+      try {
+        await deliverTranscriptPdf(ready, { download: true, store: true });
+        toast.success('PDF downloaded and saved to the library');
+        await loadJobs();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'PDF failed');
+      } finally {
+        setPdfBusyId(null);
+      }
+    })();
+  }, [jobs, loadJobs]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return jobs;
@@ -118,6 +148,20 @@ function Studio({ user }: { user: { id: string; email: string } }) {
 
   const selected = jobs.find((j) => j.id === selectedId) ?? null;
   const inflightJobs = jobs.filter((j) => j.status === 'pending' || j.status === 'processing');
+
+  const savePdf = async (job: TranscriptionJob) => {
+    if (pdfBusyId) return;
+    setPdfBusyId(job.id);
+    try {
+      await deliverTranscriptPdf(job, { download: true, store: true });
+      toast.success(job.pdf_path ? 'PDF downloaded' : 'PDF downloaded and saved to the library');
+      await loadJobs();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'PDF failed');
+    } finally {
+      setPdfBusyId(null);
+    }
+  };
 
   const metrics = useMemo(() => {
     const completed = jobs.filter((j) => j.status === 'completed').length;
@@ -344,7 +388,8 @@ function Studio({ user }: { user: { id: string; email: string } }) {
           selected={selected}
           onSelect={setSelectedId}
           onRefresh={() => void poll()}
-          onPdf={(job) => { transcriptToPdf(job); toast.success('PDF downloaded'); }}
+          onPdf={(job) => void savePdf(job)}
+          pdfBusyId={pdfBusyId}
           copied={copied}
           onCopy={copyTranscript}
           onUpload={() => setView('upload')}
@@ -399,6 +444,7 @@ function Library({
   onSelect,
   onRefresh,
   onPdf,
+  pdfBusyId,
   copied,
   onCopy,
   onUpload,
@@ -412,6 +458,7 @@ function Library({
   onSelect: (id: string | null) => void;
   onRefresh: () => void;
   onPdf: (job: TranscriptionJob) => void;
+  pdfBusyId: string | null;
   copied: boolean;
   onCopy: (text: string) => void;
   onUpload: () => void;
@@ -431,7 +478,7 @@ function Library({
       />
 
       {selected ? (
-        <JobDetail job={selected} onPdf={onPdf} copied={copied} onCopy={onCopy} />
+        <JobDetail job={selected} onPdf={onPdf} pdfBusyId={pdfBusyId} copied={copied} onCopy={onCopy} />
       ) : (
         <>
           <div className="portal-metrics">
@@ -475,7 +522,9 @@ function Library({
                 cells: [
                   <div key="t">
                     <div className="font-semibold">{job.title}</div>
-                    <div className="text-[11px] text-[#5A6B7D] font-mono mt-0.5">{job.file_name}</div>
+                    <div className="text-[11px] text-[#5A6B7D] font-mono mt-0.5">
+                      {job.file_name}{job.pdf_path ? ' · PDF in library' : ''}
+                    </div>
                   </div>,
                   <span key="w" className="text-[#5A6B7D] whitespace-nowrap">{fmtWhen(job.created_at)}</span>,
                   <span key="s" className="font-mono text-xs">{fmtSize(job.size_bytes)}</span>,
@@ -484,10 +533,10 @@ function Library({
                     key="p"
                     type="button"
                     className="btn-action-chip"
-                    disabled={job.status !== 'completed'}
+                    disabled={job.status !== 'completed' || pdfBusyId === job.id}
                     onClick={(e) => { e.stopPropagation(); onPdf(job); }}
                   >
-                    PDF
+                    {pdfBusyId === job.id ? '…' : job.pdf_path ? 'PDF' : 'PDF'}
                   </button>,
                 ],
               }))}
@@ -502,11 +551,13 @@ function Library({
 function JobDetail({
   job,
   onPdf,
+  pdfBusyId,
   copied,
   onCopy,
 }: {
   job: TranscriptionJob;
   onPdf: (job: TranscriptionJob) => void;
+  pdfBusyId: string | null;
   copied: boolean;
   onCopy: (text: string) => void;
 }) {
@@ -572,14 +623,14 @@ function JobDetail({
         <header className="portal-section__head">
           <div>
             <h2 className="portal-section__title">Transcript</h2>
-            <p className="portal-section__desc">Copy or export PDF.</p>
+            <p className="portal-section__desc">Copy or download the branded PDF.</p>
           </div>
           <div className="flex gap-2">
             <button type="button" className="btn-secondary min-h-11 px-3 py-1.5 text-xs" disabled={!job.transcript_text} onClick={() => job.transcript_text && onCopy(job.transcript_text)}>
               <Copy size={14} /> {copied ? 'Copied' : 'Copy'}
             </button>
-            <button type="button" className="btn-primary min-h-11 px-3 py-1.5 text-xs" disabled={job.status !== 'completed'} onClick={() => onPdf(job)}>
-              <Download size={14} /> PDF
+            <button type="button" className="btn-primary min-h-11 px-3 py-1.5 text-xs" disabled={job.status !== 'completed' || pdfBusyId === job.id} onClick={() => onPdf(job)}>
+              <Download size={14} /> {pdfBusyId === job.id ? 'Generating…' : 'Download PDF'}
             </button>
           </div>
         </header>

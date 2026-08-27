@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { BRAND, PORTAL_BACKDROP } from '../../lib/brand';
+import { BRAND, AUTH_HERO } from '../../lib/brand';
 import { useDialogChrome } from '../../hooks/useDialogChrome';
 import BrandMark from '../brand/BrandMark';
 import ConfirmationModal from '../shared/ConfirmationModal';
@@ -79,8 +79,9 @@ export default function PortalLayout({
     <div className="portal-shell">
       <a className="skip-link" href="#studio-main">Skip to studio</a>
       <div className="portal-backdrop" aria-hidden>
+        <img src={AUTH_HERO} alt="" className="portal-backdrop__photo" />
         <div className="portal-backdrop__veil" />
-        <img src={PORTAL_BACKDROP} alt="" className="portal-backdrop__photo" />
+        <div className="auth-grain" />
       </div>
 
       <div className="relative z-10 flex h-dvh max-h-dvh min-h-0 gap-3 p-2 sm:p-3 lg:p-4">

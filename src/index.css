@@ -138,7 +138,7 @@
   .portal-shell {
     position: relative;
     min-height: 100dvh;
-    background: #eef2ee;
+    background: #0e1f1a;
   }
 
   .portal-backdrop {
@@ -152,17 +152,29 @@
   .portal-backdrop__photo {
     position: absolute;
     inset: 0;
+    z-index: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
-    object-position: center 28%;
-    opacity: 0.12;
+    object-position: center 30%;
   }
 
   .portal-backdrop__veil {
     position: absolute;
     inset: 0;
-    background: #eef2ee;
+    z-index: 1;
+    background:
+      linear-gradient(
+        105deg,
+        rgba(8, 18, 15, 0.94) 0%,
+        rgba(14, 31, 26, 0.82) 42%,
+        rgba(14, 31, 26, 0.4) 68%,
+        rgba(14, 31, 26, 0.62) 100%
+      );
+  }
+
+  .portal-backdrop .auth-grain {
+    z-index: 2;
   }
 
   .sidebar-glass {
@@ -218,8 +230,8 @@
   }
 
   .content-canvas {
-    background: #fff;
-    border: 1px solid rgba(14, 31, 26, 0.08);
+    background: transparent;
+    border: 0;
     border-radius: 0.75rem;
     min-height: 100%;
     padding: 0.75rem;

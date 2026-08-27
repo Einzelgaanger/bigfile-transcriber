@@ -34,8 +34,8 @@ create policy "owners update own jobs" on public.transcription_jobs
 create policy "owners delete own jobs" on public.transcription_jobs
   for delete to authenticated using ((select auth.uid()) = user_id);
 
--- Want the whole team to see every transcript instead? Replace the SELECT
--- policy above with:  using (true)
+-- Shared studio (all signed-in accounts see the same library) is in
+-- 0002_shared_studio.sql.
 
 create index if not exists transcription_jobs_user_idx
   on public.transcription_jobs (user_id, created_at desc);

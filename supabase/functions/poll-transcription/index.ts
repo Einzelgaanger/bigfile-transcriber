@@ -1,5 +1,5 @@
 // poll-transcription — checks AssemblyAI for jobs still processing.
-// Callable by the signed-in owner (from the UI) or by cron with the service role key.
+// Callable by any signed-in studio account (from the UI) or by cron with the service role key.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
@@ -87,22 +87,17 @@ Deno.serve(async (req) => {
 
   const token = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
   const isCron = token === serviceKey;
-  let userId: string | null = null;
   if (!isCron) {
     const { data } = await admin.auth.getUser(token);
-    userId = data?.user?.id ?? null;
-    if (!userId) return json({ error: "Unauthorized" }, 401);
+    if (!data?.user?.id) return json({ error: "Unauthorized" }, 401);
   }
 
-  let q = admin
+  const { data: rows, error } = await admin
     .from("transcription_jobs")
     .select("id, provider_job_id")
     .eq("status", "processing")
     .not("provider_job_id", "is", null)
     .limit(25);
-  if (userId) q = q.eq("user_id", userId);
-
-  const { data: rows, error } = await q;
   if (error) return json({ error: error.message }, 500);
 
   let completed = 0, processing = 0, failed = 0;

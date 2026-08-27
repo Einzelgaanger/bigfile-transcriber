@@ -87,7 +87,7 @@ export default function AuthPage({
               <h2 className="m-0 text-[13px] font-bold text-[#0E1F1A]">Sign in</h2>
             </div>
             <p className="text-[11px] font-medium text-[#5A6B7D] mt-1 mb-5">
-              Existing studio accounts only. New users are created in the dashboard.
+              Existing studio accounts only. Every login opens the same library.
             </p>
 
             <label className="field-label" htmlFor="email">Email</label>

@@ -79,6 +79,5 @@ Sign-in only. Public signup is off in `supabase/config.toml` (`enable_signup = f
 On the hosted project: Authentication → Providers → Email → turn off **Allow new users to sign up**.
 Create users in Authentication → Users → Add user.
 
-`0001_init.sql` ships with RLS: users see only their own jobs. Enable
-Email auth in the Supabase dashboard. If you want a fully public tool, swap
-the policies for `to anon` variants — the file tells you where.
+`0002_shared_studio.sql` opens the library to every signed-in studio account.
+Public signup stays off; create users in Authentication → Users → Add user.

@@ -176,7 +176,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
       <section className="cta-band">
         <div className="container">
           <h2>Open the studio.</h2>
-          <p className="section-lead">Sign in with email. Your jobs stay behind RLS on your project.</p>
+          <p className="section-lead">Sign in with a studio account. Everyone lands on the same library.</p>
           <div className="jump" style={{ marginTop: 24 }}>
             <button type="button" className="btn btn-dark" onClick={onEnter}>
               Enter studio

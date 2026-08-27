@@ -93,8 +93,17 @@ function Studio({ user }: { user: { id: string; email: string } }) {
   useEffect(() => {
     void poll();
     const id = setInterval(() => void poll(), 30_000);
-    return () => clearInterval(id);
-  }, [poll]);
+    const channel = supabase
+      .channel('studio-jobs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transcription_jobs' }, () => {
+        void loadJobs();
+      })
+      .subscribe();
+    return () => {
+      clearInterval(id);
+      void supabase.removeChannel(channel);
+    };
+  }, [poll, loadJobs]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -189,7 +198,7 @@ function Studio({ user }: { user: { id: string; email: string } }) {
             }
           />
           <div className="portal-callout">
-            Gold is in flight. Lime is ready. Media stays in your bucket until AssemblyAI fetches a signed URL.
+            One library for every studio login. Gold is in flight. Lime is ready.
           </div>
           <div className="portal-metrics">
             <StatCard label="Jobs" value={jobs.length} icon={Layers} accent="forest" />
@@ -347,7 +356,7 @@ function Studio({ user }: { user: { id: string; email: string } }) {
         <div className="portal-page animate-fade-in">
           <PageHeader title="Profile" subtitle="Account and session for this studio." />
           <div className="portal-callout">
-            Jobs are private to this email. Sign-out is confirmed before it runs.
+            Everyone who can sign in shares this library. Sign-out is confirmed before it runs.
           </div>
           <div className="portal-tabs">
             <button type="button" className={settingsTab === 'profile' ? 'is-active' : ''} onClick={() => setSettingsTab('profile')}>Profile</button>
@@ -359,7 +368,7 @@ function Studio({ user }: { user: { id: string; email: string } }) {
                 <div>
                   <h2 className="portal-section__title">{settingsTab === 'profile' ? 'Identity' : 'Session'}</h2>
                   <p className="portal-section__desc">
-                    {settingsTab === 'profile' ? 'Email tied to this RLS owner.' : 'Sign-out is confirmed before it runs.'}
+                    {settingsTab === 'profile' ? 'This login. Jobs are studio-wide, not private to this email.' : 'Sign-out is confirmed before it runs.'}
                   </p>
                 </div>
               </header>

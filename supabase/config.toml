@@ -18,8 +18,10 @@ additional_redirect_urls = [
   "https://bigfile-transcriber.onrender.com",
 ]
 
+# Keep the email provider ON so existing users can sign in.
+# [auth.email].enable_signup maps to the provider toggle — false blocks logins too.
 [auth.email]
-enable_signup = false
+enable_signup = true
 enable_confirmations = false
 
 [functions.submit-transcription]

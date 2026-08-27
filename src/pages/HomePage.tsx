@@ -49,7 +49,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
             <h2>Board calls and field audio do not fit a 25 MB inbox.</h2>
             <p className="lead">
               Multi-gigabyte recordings stall on ordinary uploaders. We keep the file in your storage,
-              transcribe from a signed URL, and return a document you can file.
+              transcribe from a signed URL, and return a PDF you can file.
             </p>
           </Reveal>
           <Reveal delay={2}>
@@ -106,7 +106,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
         <div className="mk-ribbon-row">
           <div className="mk-ribbon__copy">
             <span className="idx">02 — RECORD</span>
-            <h2>A transcript that files like an archive document.</h2>
+            <h2>A transcript that files as a PDF.</h2>
             <p className="section-lead">Mono IDs, status badges, and a dense library — not a card wall.</p>
           </div>
           <div className="mk-ribbon__media mk-panel--forest">

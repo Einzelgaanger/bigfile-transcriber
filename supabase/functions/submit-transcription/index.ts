@@ -59,13 +59,9 @@ Deno.serve(async (req) => {
     headers: { authorization: key, "content-type": "application/json" },
     body: JSON.stringify({
       audio_url: signed.signedUrl,
+      speech_models: ["universal-3-5-pro", "universal-2"],
       speaker_labels: true,
-      summarization: true,
-      summary_model: "informative",
-      summary_type: "bullets",
       language_detection: true,
-      // NOTE: do not enable auto_chapters together with summarization —
-      // AssemblyAI rejects that combination with a 400.
     }),
   });
 

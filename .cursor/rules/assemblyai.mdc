@@ -1,0 +1,11 @@
+---
+description: AssemblyAI STT — use live docs, never client-side keys
+alwaysApply: false
+---
+
+Always fetch https://www.assemblyai.com/docs/llms.txt before writing AssemblyAI code.
+The API has changed — do not rely on memorized parameter names.
+
+- Pre-recorded: `speech_models: ["universal-3-5-pro", "universal-2"]`. Auth header is the raw key (no Bearer).
+- Do not use deprecated `summarization`, `summary_model`, `summary_type`, or `auto_chapters`. Summaries go through LLM Gateway after the transcript completes.
+- Never put `ASSEMBLYAI_API_KEY` in browser code. It lives in Supabase Edge Function secrets only.

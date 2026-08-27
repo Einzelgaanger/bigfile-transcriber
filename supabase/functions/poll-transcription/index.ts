@@ -18,6 +18,34 @@ function buildTranscript(t: any): string {
   return t.text ?? "";
 }
 
+/** Bullet summary via LLM Gateway — built-in summarization params are deprecated. */
+async function bulletSummary(key: string, transcript: string): Promise<string | null> {
+  const clipped = transcript.slice(0, 120_000);
+  if (!clipped.trim()) return null;
+  const res = await fetch("https://llm-gateway.assemblyai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { authorization: key, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-6",
+      max_tokens: 800,
+      messages: [
+        {
+          role: "system",
+          content: "Summarize this recording as 5–12 short bullets. No title, no preamble.",
+        },
+        { role: "user", content: clipped },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    console.error(`[poll-transcription] LLM Gateway ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    return null;
+  }
+  const data = await res.json();
+  const text = data?.choices?.[0]?.message?.content;
+  return typeof text === "string" && text.trim() ? text.trim() : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
@@ -59,9 +87,11 @@ Deno.serve(async (req) => {
 
       if (t.status === "completed") {
         const seconds = Number(t.audio_duration ?? 0);
+        const transcriptText = buildTranscript(t);
+        const summary = await bulletSummary(key, transcriptText);
         await admin.from("transcription_jobs").update({
-          transcript_text: buildTranscript(t),
-          summary: typeof t.summary === "string" ? t.summary : null,
+          transcript_text: transcriptText,
+          summary,
           duration_minutes: seconds ? Math.round(seconds / 60) : null,
           status: "completed",
           error: null,

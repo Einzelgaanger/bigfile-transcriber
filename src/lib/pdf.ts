@@ -76,7 +76,7 @@ export function transcriptToPdf(job: TranscriptionJob) {
   y = 132;
 
   if (job.summary) {
-    heading('Summary', 13);
+    heading('Description', 13);
     body(job.summary);
     y += 8;
   }

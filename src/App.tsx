@@ -67,7 +67,6 @@ function Root() {
 function Studio({ user }: { user: { id: string; email: string } }) {
   const [jobs, setJobs] = useState<TranscriptionJob[]>([]);
   const [view, setView] = useState<PortalView>('dashboard');
-  const [title, setTitle] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -129,7 +128,7 @@ function Studio({ user }: { user: { id: string; email: string } }) {
       const { data, error: fnErr } = await supabase.functions.invoke('submit-transcription', {
         body: {
           storagePath: path,
-          title: title.trim() || file.name,
+          title: 'Transcribing…',
           fileName: file.name,
           sizeBytes: file.size,
           mimeType: file.type,
@@ -138,12 +137,14 @@ function Studio({ user }: { user: { id: string; email: string } }) {
       if (fnErr) throw new Error(fnErr.message);
       if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
       setFile(null);
-      setTitle('');
       await loadJobs();
       toast.success('Job submitted');
       setView('library');
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Upload failed';
+      let message = e instanceof Error ? e.message : 'Upload failed';
+      if (/413|Maximum size exceeded/i.test(message)) {
+        message = 'This file is larger than the studio storage limit. In Supabase: Storage → Settings → set Global file size to 5 GB (Pro plan).';
+      }
       setError(message);
       toast.error(message);
     } finally {
@@ -272,44 +273,38 @@ function Studio({ user }: { user: { id: string; email: string } }) {
             <header className="portal-section__head">
               <div>
                 <h2 className="portal-section__title">Upload</h2>
-                <p className="portal-section__desc">Title the job, then drop the file.</p>
+                <p className="portal-section__desc">Drop the file. Title and description come from the recording, not the filename.</p>
               </div>
             </header>
             <div className="portal-section__body--pad">
-              <div className="portal-grid-2">
-                <div>
-                  <label className="field-label" htmlFor="job-title">Title</label>
-                  <input id="job-title" className="field-input" type="text" value={title} placeholder="e.g. Board call — 12 March" onChange={(e) => setTitle(e.target.value)} />
+              <div>
+                <label className="field-label">File</label>
+                <div
+                  className={`dropzone ${over ? 'is-over' : ''}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => inputRef.current?.click()}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click(); } }}
+                  onDragOver={(e) => { e.preventDefault(); setOver(true); }}
+                  onDragLeave={() => setOver(false)}
+                  onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files?.[0]; if (f) setFile(f); }}
+                >
+                  <span className="mx-auto mb-2 w-7 h-7 rounded-md bg-[#D3F36B]/25 text-[#0E1F1A] grid place-items-center">
+                    <UploadCloud size={16} />
+                  </span>
+                  {file ? (
+                    <>
+                      <div className="text-sm font-bold text-[#0E1F1A] break-anywhere">{file.name}</div>
+                      <div className="text-[11px] font-medium mt-1 font-mono">{fmtSize(file.size)}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-sm font-semibold text-[#0E1F1A]">Drop media here, or click to browse</div>
+                      <div className="text-[11px] font-medium mt-1">mp4 · mp3 · wav · m4a</div>
+                    </>
+                  )}
                 </div>
-                <div>
-                  <label className="field-label">File</label>
-                  <div
-                    className={`dropzone ${over ? 'is-over' : ''}`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => inputRef.current?.click()}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click(); } }}
-                    onDragOver={(e) => { e.preventDefault(); setOver(true); }}
-                    onDragLeave={() => setOver(false)}
-                    onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files?.[0]; if (f) setFile(f); }}
-                  >
-                    <span className="mx-auto mb-2 w-7 h-7 rounded-md bg-[#D3F36B]/25 text-[#0E1F1A] grid place-items-center">
-                      <UploadCloud size={16} />
-                    </span>
-                    {file ? (
-                      <>
-                        <div className="text-sm font-bold text-[#0E1F1A] break-anywhere">{file.name}</div>
-                        <div className="text-[11px] font-medium mt-1 font-mono">{fmtSize(file.size)}</div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="text-sm font-semibold text-[#0E1F1A]">Drop media here, or click to browse</div>
-                        <div className="text-[11px] font-medium mt-1">mp4 · mp3 · wav · m4a</div>
-                      </>
-                    )}
-                  </div>
-                  <input ref={inputRef} type="file" accept="audio/*,video/*" hidden aria-label="Choose a media file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                </div>
+                <input ref={inputRef} type="file" accept="audio/*,video/*" hidden aria-label="Choose a media file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
               </div>
               {progress !== null && (
                 <div className="mt-3">
@@ -556,8 +551,8 @@ function JobDetail({
         <section className="portal-section">
           <header className="portal-section__head">
             <div>
-              <h2 className="portal-section__title">Summary</h2>
-              <p className="portal-section__desc">Bullet overview of the recording.</p>
+              <h2 className="portal-section__title">Description</h2>
+              <p className="portal-section__desc">Written from the transcript, not the filename.</p>
             </div>
           </header>
           <div className="portal-section__body--pad text-sm leading-relaxed text-[#0E1F1A] whitespace-pre-wrap">{job.summary}</div>

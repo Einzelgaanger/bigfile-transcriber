@@ -24,6 +24,9 @@ additional_redirect_urls = [
 enable_signup = true
 enable_confirmations = false
 
+[storage]
+file_size_limit = "5GiB"
+
 [functions.submit-transcription]
 verify_jwt = true
 

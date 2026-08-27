@@ -55,7 +55,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
           <Reveal delay={2}>
             <aside>
               <p className="lead" style={{ maxWidth: '36ch' }}>
-                Resumable 6 MB chunks. Private bucket. Transcript and bullet summary as a downloadable PDF.
+                Resumable 6 MB chunks. Private bucket. Transcript plus an AI title and description as a downloadable PDF.
                 No dashboard collage on the first screen — one job, then the studio.
               </p>
             </aside>
@@ -77,7 +77,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
             {[
               ['01', 'Upload', 'Drop mp4, mp3, wav, or m4a. The transfer resumes if the line drops.'],
               ['02', 'Transcribe', 'AssemblyAI reads a 48-hour signed URL. The media never re-uploads.'],
-              ['03', 'Review', 'Speaker labels, duration, and a bullet summary land in your library.'],
+              ['03', 'Review', 'Speaker labels, duration, and an AI title and description land in your library.'],
               ['04', 'Export', 'Download a branded PDF or copy the text from the studio.'],
             ].map(([n, t, b], i) => (
               <Reveal key={n} delay={(i + 1) as 1 | 2 | 3 | 4}>
@@ -97,7 +97,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
           <div className="mk-ribbon__copy">
             <span className="idx">01 — INTAKE</span>
             <h2>The session is the source. The file is just the carrier.</h2>
-            <p className="section-lead">Title the job, drop the media, leave the tab. Polling finishes the rest.</p>
+            <p className="section-lead">Drop the media, leave the tab. Title and description come from the recording.</p>
           </div>
           <div className="mk-ribbon__media mk-panel--mist">
             <img className="mk-panel-photo" src={IMAGES.ribbonUpload} alt="Recording booth with headphones" />
@@ -137,7 +137,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
               <div className="card-body">
                 <div className="ic"><BrandMark className="w-7 h-7" /></div>
                 <h3>New job</h3>
-                <p>Resumable upload, title, and a forest submit. Callout explains the signed-URL path.</p>
+                <p>Resumable upload. Title and description are written from the transcript.</p>
                 <ul className="ticks">
                   <li><span className="dot" /> Up to 5 GB on Pro storage</li>
                   <li><span className="dot" /> mp4 · mp3 · wav · m4a</li>

@@ -18,32 +18,62 @@ function buildTranscript(t: any): string {
   return t.text ?? "";
 }
 
-/** Bullet summary via LLM Gateway — built-in summarization params are deprecated. */
-async function bulletSummary(key: string, transcript: string): Promise<string | null> {
+function parseTopic(raw: string): { title: string; description: string } | null {
+  const clipped = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  const start = clipped.indexOf("{");
+  const end = clipped.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const obj = JSON.parse(clipped.slice(start, end + 1));
+    const title = String(obj.title ?? "").trim();
+    const description = String(obj.description ?? "").trim();
+    if (!title) return null;
+    return { title: title.slice(0, 120), description: description.slice(0, 2000) };
+  } catch {
+    return null;
+  }
+}
+
+/** Topic title + description from the transcript — never from the filename. */
+async function topicFromTranscript(transcript: string): Promise<{ title: string; description: string } | null> {
+  const apiKey = Deno.env.get("OPENROUTER_API_KEY");
+  const model = Deno.env.get("OPENROUTER_MODEL") || "anthropic/claude-sonnet-4";
+  if (!apiKey) {
+    console.error("[poll-transcription] OPENROUTER_API_KEY missing");
+    return null;
+  }
   const clipped = transcript.slice(0, 120_000);
   if (!clipped.trim()) return null;
-  const res = await fetch("https://llm-gateway.assemblyai.com/v1/chat/completions", {
+
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
-    headers: { authorization: key, "content-type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://prodg.studio",
+      "X-Title": "BigFile Transcriber",
+    },
     body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 800,
+      model,
+      temperature: 0.3,
+      max_tokens: 700,
       messages: [
         {
           role: "system",
-          content: "Summarize this recording as 5–12 short bullets. No title, no preamble.",
+          content:
+            'Name this recording from what was said, never from a filename or file metadata. Return JSON only: {"title":"...","description":"..."}. title: 4–12 words, specific topic, no quotes, no extensions. description: 2–4 sentences on what the recording covers. No bullets.',
         },
         { role: "user", content: clipped },
       ],
     }),
   });
   if (!res.ok) {
-    console.error(`[poll-transcription] LLM Gateway ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    console.error(`[poll-transcription] OpenRouter ${res.status}: ${(await res.text()).slice(0, 300)}`);
     return null;
   }
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content;
-  return typeof text === "string" && text.trim() ? text.trim() : null;
+  return typeof text === "string" ? parseTopic(text) : null;
 }
 
 Deno.serve(async (req) => {
@@ -88,10 +118,11 @@ Deno.serve(async (req) => {
       if (t.status === "completed") {
         const seconds = Number(t.audio_duration ?? 0);
         const transcriptText = buildTranscript(t);
-        const summary = await bulletSummary(key, transcriptText);
+        const topic = await topicFromTranscript(transcriptText);
         await admin.from("transcription_jobs").update({
           transcript_text: transcriptText,
-          summary,
+          title: topic?.title || "Untitled recording",
+          summary: topic?.description ?? null,
           duration_minutes: seconds ? Math.round(seconds / 60) : null,
           status: "completed",
           error: null,

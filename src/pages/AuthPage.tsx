@@ -33,7 +33,10 @@ export default function AuthPage({
   const go = async () => {
     setBusy(true);
     setMsg(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password: password.trim(),
+    });
     if (error) {
       setMsg(error.message);
       setBusy(false);

@@ -1,5 +1,6 @@
 // submit-transcription — called after the browser finishes the resumable upload.
-// Body: { storagePath, title, fileName?, sizeBytes?, mimeType? }
+// Body: { storagePath, fileName?, sizeBytes?, mimeType? }
+// Title is filled later from the transcript (OpenRouter), not the filename.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
@@ -10,6 +11,7 @@ const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 
 const SIGNED_TTL = 60 * 60 * 48; // 48h — long enough for multi-GB jobs
+const PLACEHOLDER_TITLE = "Transcribing…";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -20,7 +22,6 @@ Deno.serve(async (req) => {
   const url = Deno.env.get("SUPABASE_URL") ?? "";
   const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "");
 
-  // Identify the caller from their JWT.
   const jwt = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
   const { data: userData } = await admin.auth.getUser(jwt);
   const userId = userData?.user?.id;
@@ -28,8 +29,7 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   const storagePath = String(body.storagePath ?? "").trim();
-  const title = String(body.title ?? "").trim();
-  if (!storagePath || !title) return json({ error: "storagePath and title are required" }, 400);
+  if (!storagePath) return json({ error: "storagePath is required" }, 400);
   if (!storagePath.startsWith(`${userId}/`)) return json({ error: "Forbidden path" }, 403);
 
   const { data: signed, error: signErr } = await admin.storage
@@ -43,7 +43,7 @@ Deno.serve(async (req) => {
     .from("transcription_jobs")
     .insert({
       user_id: userId,
-      title,
+      title: PLACEHOLDER_TITLE,
       file_name: body.fileName ?? storagePath.split("/").pop() ?? null,
       storage_path: storagePath,
       size_bytes: body.sizeBytes ?? null,

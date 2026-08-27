@@ -33,7 +33,7 @@ gh repo create bigfile-transcriber --private --source=. --push
 ```bash
 npm i -g supabase
 supabase link --project-ref <your-ref>
-supabase secrets set ASSEMBLYAI_API_KEY=<key>
+supabase secrets set ASSEMBLYAI_API_KEY=<key> OPENROUTER_API_KEY=<key> OPENROUTER_MODEL=anthropic/claude-sonnet-4
 supabase functions deploy submit-transcription
 supabase functions deploy poll-transcription
 ```

@@ -1,0 +1,20 @@
+# A string used to distinguish different Supabase projects on the same host.
+project_id = "fvdwagawkounsofwsyen"
+
+[api]
+enabled = true
+
+[db]
+major_version = 17
+
+[auth]
+enable_signup = false
+
+[auth.email]
+enable_signup = false
+
+[functions.submit-transcription]
+verify_jwt = true
+
+[functions.poll-transcription]
+verify_jwt = false

@@ -18,6 +18,48 @@ const json = (req: Request, b: unknown, s = 200) =>
 const SIGNED_TTL = 60 * 60 * 48; // 48h — long enough for multi-GB jobs
 const PLACEHOLDER_TITLE = "Transcribing…";
 
+async function signMinioGet(storagePath: string): Promise<string | null> {
+  const publicUrl = (Deno.env.get("S3_PUBLIC_URL") ?? "").replace(/\/$/, "");
+  const access = Deno.env.get("S3_ACCESS_KEY") ?? "";
+  const secret = Deno.env.get("S3_SECRET_KEY") ?? "";
+  const bucket = Deno.env.get("S3_BUCKET") ?? "media-uploads";
+  const region = Deno.env.get("S3_REGION") ?? "us-east-1";
+  if (!publicUrl || !access || !secret) return null;
+
+  const { AwsClient } = await import("https://esm.sh/aws4fetch@1.0.20");
+  const aws = new AwsClient({
+    accessKeyId: access,
+    secretAccessKey: secret,
+    region,
+    service: "s3",
+  });
+  const objectUrl = `${publicUrl}/${bucket}/${storagePath.split("/").map(encodeURIComponent).join("/")}`;
+  const signed = await aws.sign(`${objectUrl}?X-Amz-Expires=${SIGNED_TTL}`, {
+    method: "GET",
+    aws: { signQuery: true },
+  });
+  return signed.url;
+}
+
+async function signedAudioUrl(
+  admin: ReturnType<typeof createClient>,
+  storagePath: string,
+): Promise<string> {
+  const minioUrl = await signMinioGet(storagePath).catch((err) => {
+    console.error("[submit-transcription] MinIO sign failed", err);
+    return null;
+  });
+  if (minioUrl) return minioUrl;
+
+  const { data: signed, error: signErr } = await admin.storage
+    .from("media-uploads")
+    .createSignedUrl(storagePath, SIGNED_TTL);
+  if (signErr || !signed?.signedUrl) {
+    throw new Error(`Could not sign object: ${signErr?.message ?? "unknown"}`);
+  }
+  return signed.signedUrl;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeadersFor(req) });
 
@@ -37,11 +79,11 @@ Deno.serve(async (req) => {
   if (!storagePath) return json(req, { error: "storagePath is required" }, 400);
   if (!storagePath.startsWith(`${userId}/`)) return json(req, { error: "Forbidden path" }, 403);
 
-  const { data: signed, error: signErr } = await admin.storage
-    .from("media-uploads")
-    .createSignedUrl(storagePath, SIGNED_TTL);
-  if (signErr || !signed?.signedUrl) {
-    return json(req, { error: `Could not sign object: ${signErr?.message ?? "unknown"}` }, 400);
+  let audioUrl: string;
+  try {
+    audioUrl = await signedAudioUrl(admin, storagePath);
+  } catch (err) {
+    return json(req, { error: err instanceof Error ? err.message : "Could not sign object" }, 400);
   }
 
   const { data: job, error: insErr } = await admin
@@ -63,7 +105,7 @@ Deno.serve(async (req) => {
     method: "POST",
     headers: { authorization: key, "content-type": "application/json" },
     body: JSON.stringify({
-      audio_url: signed.signedUrl,
+      audio_url: audioUrl,
       speech_models: ["universal-3-5-pro", "universal-2"],
       speaker_labels: true,
       language_detection: true,

@@ -7,9 +7,11 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "start": "node scripts/serve.mjs"
+    "start": "node server/index.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.864.0",
+    "@aws-sdk/s3-request-presigner": "^3.864.0",
     "@supabase/supabase-js": "^2.45.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^5.0.8",

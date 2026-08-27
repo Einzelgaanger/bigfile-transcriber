@@ -196,7 +196,7 @@ function Studio({ user }: { user: { id: string; email: string } }) {
     } catch (e) {
       let message = e instanceof Error ? e.message : 'Upload failed';
       if (/413|Maximum size exceeded/i.test(message)) {
-        message = 'This file is larger than the studio storage limit. In Supabase: Storage → Settings → set Global file size to 5 GB (Pro plan).';
+        message = 'This file is larger than the current storage limit. On Coolify the file should go to MinIO; if you still see this, the app fell back to Supabase (50 MB on Free).';
       }
       setError(message);
       toast.error(message);

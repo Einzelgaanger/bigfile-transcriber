@@ -13,6 +13,7 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -45,6 +46,60 @@ const ASR_MAX_BYTES = Math.floor(4.8 * 1024 * 1024 * 1024); // AssemblyAI /v2/tr
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
 /** @type {Map<string, { status: string, audioKey?: string, error?: string }>} */
 const prepareJobs = new Map();
+const ALLOWED_UPLOAD_EXT = new Set(['mp3', 'mp4']);
+
+function keyExt(key) {
+  const base = String(key).split('/').pop() || '';
+  const dot = base.lastIndexOf('.');
+  return dot < 0 ? '' : base.slice(dot + 1).toLowerCase();
+}
+
+function contentTypeForExt(ext) {
+  return ext === 'mp3' ? 'audio/mpeg' : 'video/mp4';
+}
+
+function declaredTypeOk(type, ext) {
+  const mime = String(type || '').trim().toLowerCase();
+  if (!mime) return true;
+  if (ext === 'mp3') return mime === 'audio/mpeg' || mime === 'audio/mp3';
+  if (ext === 'mp4') return mime === 'video/mp4' || mime === 'audio/mp4' || mime === 'application/mp4';
+  return false;
+}
+
+function looksLikeMp4(buf) {
+  return buf.length >= 8 && buf.subarray(4, 8).toString('ascii') === 'ftyp';
+}
+
+function looksLikeMp3(buf) {
+  if (buf.length < 3) return false;
+  if (buf.subarray(0, 3).toString('ascii') === 'ID3') return true;
+  return buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0;
+}
+
+function looksHostile(buf) {
+  if (buf.length < 2) return true;
+  if (buf[0] === 0x4d && buf[1] === 0x5a) return true; // PE
+  if (buf[0] === 0x7f && buf[1] === 0x45) return true; // ELF
+  if (buf[0] === 0x50 && buf[1] === 0x4b) return true; // ZIP/Office
+  return false;
+}
+
+async function sniffUpload(internalClient, key) {
+  const ext = keyExt(key);
+  if (!ALLOWED_UPLOAD_EXT.has(ext)) {
+    throw new Error('Only MP3 and MP4 files are allowed');
+  }
+  const obj = await internalClient.send(new GetObjectCommand({
+    Bucket: S3_BUCKET,
+    Key: key,
+    Range: 'bytes=0-63',
+  }));
+  const buf = Buffer.from(await obj.Body.transformToByteArray());
+  if (looksHostile(buf)) throw new Error('File is not a valid MP3 or MP4');
+  if (ext === 'mp4' && !looksLikeMp4(buf)) throw new Error('File is not a valid MP4');
+  if (ext === 'mp3' && !looksLikeMp3(buf)) throw new Error('File is not a valid MP3');
+  return ext;
+}
 
 function s3(endpoint) {
   return new S3Client({
@@ -104,10 +159,11 @@ async function requireUser(req) {
   return user?.id ? user : null;
 }
 
-function runFfmpeg(signedUrl, tmpFile) {
+function runFfmpeg(signedUrl, tmpFile, inputFormat) {
   return new Promise((resolve, reject) => {
     const ff = spawn('ffmpeg', [
       '-hide_banner', '-nostdin', '-y',
+      '-f', inputFormat,
       '-i', signedUrl,
       '-vn', '-ac', '1', '-c:a', 'aac', '-b:a', '64k',
       '-movflags', '+faststart',
@@ -131,7 +187,7 @@ function runFfmpeg(signedUrl, tmpFile) {
   });
 }
 
-async function extractAudio(internalClient, key) {
+async function extractAudio(internalClient, key, ext) {
   const audioKey = `${key}.asr.m4a`;
   const signedUrl = await getSignedUrl(
     internalClient,
@@ -140,7 +196,7 @@ async function extractAudio(internalClient, key) {
   );
   const tmpFile = join(tmpdir(), `${randomUUID()}.m4a`);
   try {
-    await runFfmpeg(signedUrl, tmpFile);
+    await runFfmpeg(signedUrl, tmpFile, ext === 'mp3' ? 'mp3' : 'mp4');
     const size = statSync(tmpFile).size;
     if (!size) throw new Error('ffmpeg produced an empty audio file');
     await internalClient.send(new PutObjectCommand({
@@ -156,7 +212,7 @@ async function extractAudio(internalClient, key) {
   }
 }
 
-async function startPrepare(internalClient, key, size) {
+async function startPrepare(internalClient, key, size, ext) {
   const existing = prepareJobs.get(key);
   if (existing?.status === 'processing' || existing?.status === 'ready') return existing;
 
@@ -168,7 +224,7 @@ async function startPrepare(internalClient, key, size) {
 
   const job = { status: 'processing' };
   prepareJobs.set(key, job);
-  extractAudio(internalClient, key)
+  extractAudio(internalClient, key, ext)
     .then((audioKey) => {
       prepareJobs.set(key, { status: 'ready', audioKey });
     })
@@ -210,8 +266,12 @@ async function handleApi(req, res, url) {
   const internalClient = s3(S3_ENDPOINT);
   const body = req.method === 'POST' ? await readBody(req) : {};
   const key = String(body.key || body.storagePath || '').trim();
-  if (key && !key.startsWith(`${user.id}/`)) {
+  if (key && (!key.startsWith(`${user.id}/`) || key.includes('..') || key.includes('\\') || key.includes('\0'))) {
     send(res, 403, { error: 'Forbidden path' });
+    return;
+  }
+  if (key && !ALLOWED_UPLOAD_EXT.has(keyExt(key))) {
+    send(res, 400, { error: 'Only MP3 and MP4 files are allowed' });
     return;
   }
 
@@ -220,10 +280,19 @@ async function handleApi(req, res, url) {
       send(res, 400, { error: 'key is required' });
       return;
     }
+    const ext = keyExt(key);
+    if (!ALLOWED_UPLOAD_EXT.has(ext)) {
+      send(res, 400, { error: 'Only MP3 and MP4 files are allowed' });
+      return;
+    }
+    if (!declaredTypeOk(body.contentType, ext)) {
+      send(res, 400, { error: 'Only MP3 and MP4 files are allowed' });
+      return;
+    }
     const created = await internalClient.send(new CreateMultipartUploadCommand({
       Bucket: S3_BUCKET,
       Key: key,
-      ContentType: String(body.contentType || 'application/octet-stream'),
+      ContentType: contentTypeForExt(ext),
     }));
     send(res, 200, { key, uploadId: created.UploadId, maxBytes: MAX_UPLOAD_BYTES });
     return;
@@ -268,6 +337,13 @@ async function handleApi(req, res, url) {
         })),
       },
     }));
+    try {
+      await sniffUpload(internalClient, key);
+    } catch (err) {
+      await internalClient.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key })).catch(() => null);
+      send(res, 400, { error: err instanceof Error ? err.message : 'Only MP3 and MP4 files are allowed' });
+      return;
+    }
     send(res, 200, { ok: true, key });
     return;
   }
@@ -304,7 +380,14 @@ async function handleApi(req, res, url) {
       send(res, 413, { status: 'error', error: 'File is larger than the 10 GB studio limit' });
       return;
     }
-    const job = await startPrepare(internalClient, key, size);
+    let ext;
+    try {
+      ext = await sniffUpload(internalClient, key);
+    } catch (err) {
+      send(res, 400, { status: 'error', error: err instanceof Error ? err.message : 'Only MP3 and MP4 files are allowed' });
+      return;
+    }
+    const job = await startPrepare(internalClient, key, size, ext);
     send(res, 200, job);
     return;
   }

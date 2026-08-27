@@ -16,6 +16,7 @@ import {
 import { toast } from 'sonner';
 import { supabase, supabaseReady, type TranscriptionJob } from './lib/supabase';
 import { buildStoragePath, MAX_UPLOAD_BYTES, prepareAudioForTranscription, resumableUpload } from './lib/upload';
+import { allowedMediaError, MEDIA_ACCEPT } from './lib/media';
 import { deliverTranscriptPdf } from './lib/pdf';
 import SetupEnv from './SetupEnv';
 import HomePage from './pages/HomePage';
@@ -183,6 +184,12 @@ function Studio({ user }: { user: { id: string; email: string } }) {
       toast.error(msg);
       return;
     }
+    const blocked = allowedMediaError(next);
+    if (blocked) {
+      setError(blocked);
+      toast.error(blocked);
+      return;
+    }
     setError(null);
     setFile(next);
   };
@@ -191,6 +198,12 @@ function Studio({ user }: { user: { id: string; email: string } }) {
     if (!file) return;
     if (file.size > MAX_UPLOAD_BYTES) {
       pickFile(file);
+      return;
+    }
+    const blocked = allowedMediaError(file);
+    if (blocked) {
+      setError(blocked);
+      toast.error(blocked);
       return;
     }
     setError(null);
@@ -343,7 +356,7 @@ function Studio({ user }: { user: { id: string; email: string } }) {
 
       {view === 'upload' && (
         <div className="portal-page animate-fade-in">
-          <PageHeader title="New job" subtitle="Upload audio or video up to 10 GB" />
+          <PageHeader title="New job" subtitle="MP3 or MP4, up to 10 GB" />
           <div className="portal-callout">
             Files go to MinIO in 64 MB parts. Over ~5 GB we extract a small audio track so AssemblyAI can transcribe it (their cap is 5 GB / 10 hours).
           </div>
@@ -378,11 +391,11 @@ function Studio({ user }: { user: { id: string; email: string } }) {
                   ) : (
                     <>
                       <div className="text-sm font-semibold text-[#0E1F1A]">Drop media here, or click to browse</div>
-                      <div className="text-[11px] font-medium mt-1">mp4 · mp3 · wav · m4a</div>
+                      <div className="text-[11px] font-medium mt-1">mp3 · mp4 only</div>
                     </>
                   )}
                 </div>
-                <input ref={inputRef} type="file" accept="audio/*,video/*" hidden aria-label="Choose a media file" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
+                <input ref={inputRef} type="file" accept={MEDIA_ACCEPT} hidden aria-label="Choose an MP3 or MP4 file" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
               </div>
               {(progress !== null || phase === 'prepare') && (
                 <div className="mt-3">

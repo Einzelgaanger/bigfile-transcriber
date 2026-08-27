@@ -75,7 +75,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
           </Reveal>
           <div className="mk-rail">
             {[
-              ['01', 'Upload', 'Drop mp4, mp3, wav, or m4a. The transfer resumes if the line drops.'],
+              ['01', 'Upload', 'Drop an mp3 or mp4. The transfer resumes if the line drops.'],
               ['02', 'Transcribe', 'AssemblyAI reads a 48-hour signed URL. The media never re-uploads.'],
               ['03', 'Review', 'Speaker labels, duration, and an AI title and description land in your library.'],
               ['04', 'Export', 'Download a branded PDF or copy the text from the studio.'],
@@ -140,7 +140,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
                 <p>Resumable upload. Title and description are written from the transcript.</p>
                 <ul className="ticks">
                   <li><span className="dot" /> Up to 10 GB on Coolify MinIO</li>
-                  <li><span className="dot" /> mp4 · mp3 · wav · m4a</li>
+                  <li><span className="dot" /> mp3 · mp4 only</li>
                 </ul>
               </div>
             </article>

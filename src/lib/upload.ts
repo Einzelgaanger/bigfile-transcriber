@@ -1,5 +1,6 @@
 import * as tus from 'tus-js-client';
 import { supabase } from './supabase';
+import { allowedMediaError, contentTypeForExt, fileExtension } from './media';
 
 const BUCKET = 'media-uploads';
 const CHUNK = 6 * 1024 * 1024; // Supabase resumable requires 6 MB chunks
@@ -47,7 +48,7 @@ async function s3Multipart(
 ): Promise<void> {
   const { uploadId } = await s3Api<{ uploadId: string }>('/api/s3/create', token, {
     key,
-    contentType: file.type || 'application/octet-stream',
+    contentType: contentTypeForExt(fileExtension(file.name)),
   });
 
   const total = Math.max(1, Math.ceil(file.size / S3_PART));
@@ -123,7 +124,7 @@ async function tusUpload(
       metadata: {
         bucketName: BUCKET,
         objectName: storagePath,
-        contentType: file.type || 'application/octet-stream',
+        contentType: contentTypeForExt(fileExtension(file.name)),
         cacheControl: '3600',
       },
       onError: reject,
@@ -147,6 +148,8 @@ export async function resumableUpload(
   storagePath: string,
   onProgress: (pct: number) => void,
 ): Promise<void> {
+  const blocked = allowedMediaError(file);
+  if (blocked) throw new Error(blocked);
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) throw new Error('No active session');
 
@@ -159,8 +162,11 @@ export async function resumableUpload(
 }
 
 export function buildStoragePath(userId: string, file: File) {
-  const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `${userId}/${Date.now()}_${safe}`;
+  const blocked = allowedMediaError(file);
+  if (blocked) throw new Error(blocked);
+  const ext = fileExtension(file.name);
+  const stem = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `${userId}/${Date.now()}_${stem}.${ext}`;
 }
 
 function sleep(ms: number) {

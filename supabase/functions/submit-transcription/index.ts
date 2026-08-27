@@ -77,10 +77,18 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => ({}));
   const storagePath = String(body.storagePath ?? "").trim();
   if (!storagePath) return json(req, { error: "storagePath is required" }, 400);
-  if (!storagePath.startsWith(`${userId}/`)) return json(req, { error: "Forbidden path" }, 403);
+  if (!storagePath.startsWith(`${userId}/`) || storagePath.includes("..")) return json(req, { error: "Forbidden path" }, 403);
+  const uploadName = storagePath.toLowerCase();
+  if (!uploadName.endsWith(".mp3") && !uploadName.endsWith(".mp4")) {
+    return json(req, { error: "Only MP3 and MP4 files are allowed" }, 400);
+  }
 
   const audioPath = String(body.audioStoragePath ?? storagePath).trim();
-  if (!audioPath.startsWith(`${userId}/`)) return json(req, { error: "Forbidden audio path" }, 403);
+  if (!audioPath.startsWith(`${userId}/`) || audioPath.includes("..")) return json(req, { error: "Forbidden audio path" }, 403);
+  const audioName = audioPath.toLowerCase();
+  if (!audioName.endsWith(".mp3") && !audioName.endsWith(".mp4") && !audioName.endsWith(".asr.m4a")) {
+    return json(req, { error: "Only MP3 and MP4 files are allowed" }, 400);
+  }
 
   let audioUrl: string;
   try {
@@ -97,7 +105,7 @@ Deno.serve(async (req) => {
       file_name: body.fileName ?? storagePath.split("/").pop() ?? null,
       storage_path: storagePath,
       size_bytes: body.sizeBytes ?? null,
-      mime_type: body.mimeType ?? null,
+      mime_type: uploadName.endsWith(".mp3") ? "audio/mpeg" : "video/mp4",
       status: "pending",
     })
     .select("id")

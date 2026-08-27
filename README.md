@@ -101,7 +101,7 @@ Auth → URL config: `site_url` / redirect list already include `https://prodg.s
 
 ## How the big-file path works
 
-On Coolify the browser uploads with **S3 multipart** (64 MB parts, presigned by `server/index.mjs`) straight into MinIO, up to **10 GB**. The Node process never buffers the file.
+On Coolify the browser uploads with **S3 multipart** (64 MB parts, presigned by `server/index.mjs`) straight into MinIO, up to **10 GB**. Only **MP3** and **MP4** are accepted (extension, MIME, and file header). The Node process never buffers the file.
 
 If the object is larger than ~5 GB, the app extracts a 64 kbps AAC track with ffmpeg and AssemblyAI fetches that instead (their `/v2/transcript` cap is 5 GB and 10 hours). Smaller files are sent as-is.
 

@@ -18,6 +18,18 @@ export default function AuthPage({
   const [busy, setBusy] = useState(false);
   const [launch, setLaunch] = useState(false);
 
+  useEffect(() => {
+    const html = document.documentElement;
+    const prevHtml = html.style.overflow;
+    const prevBody = document.body.style.overflow;
+    html.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = prevHtml;
+      document.body.style.overflow = prevBody;
+    };
+  }, []);
+
   const go = async () => {
     setBusy(true);
     setMsg(null);
@@ -34,7 +46,7 @@ export default function AuthPage({
   };
 
   return (
-    <div className="relative min-h-dvh bg-[#0E1F1A]">
+    <div className="auth-screen relative bg-[#0E1F1A]">
       <a className="skip-link" href="#auth-form">Skip to sign in</a>
       <img
         src={AUTH_HERO}
@@ -44,27 +56,27 @@ export default function AuthPage({
       <div className="absolute inset-0 auth-shade" aria-hidden />
       <div className="auth-grain" aria-hidden />
 
-      <div className="relative z-10 min-h-dvh auth-scroll">
-        <div className="min-h-dvh grid lg:grid-cols-[1.1fr_minmax(min(100%,22rem),28rem)] gap-8 lg:gap-16 items-end lg:items-center px-5 sm:px-10 py-10 lg:py-8 max-w-[1480px] mx-auto">
-          <div className="animate-soft-rise pb-4 lg:pb-0">
-            <button type="button" className="flex items-center gap-3 mb-8 bg-transparent border-0 p-0 cursor-pointer min-h-11" onClick={onBack}>
+      <div className="relative z-10 h-full min-h-0 overflow-hidden">
+        <div className="h-full min-h-0 grid lg:grid-cols-[1.1fr_minmax(min(100%,22rem),28rem)] gap-6 lg:gap-16 items-center px-5 sm:px-10 py-6 lg:py-8 max-w-[1480px] mx-auto">
+          <div className="animate-soft-rise min-w-0">
+            <button type="button" className="flex items-center gap-3 mb-5 bg-transparent border-0 p-0 cursor-pointer min-h-11" onClick={onBack}>
               <BrandMark className="w-10 h-10" />
               <span className="mk-lockup">{BRAND.lockup}</span>
             </button>
-            <p className="mk-label mb-4">Studio</p>
+            <p className="mk-label mb-3">Studio</p>
             <h1
               className="m-0 font-display font-bold text-[#F3FAF5] leading-[1.05]"
-              style={{ fontSize: 'clamp(32px, 7vw, 92px)', maxWidth: '11ch' }}
+              style={{ fontSize: 'clamp(28px, 5vw + 2vh, 80px)', maxWidth: '11ch' }}
             >
               {BRAND.tagline}
             </h1>
-            <p className="mt-5 mb-0 font-body font-normal text-[rgba(243,250,245,0.78)] max-w-[38ch]" style={{ fontSize: 'clamp(15px, 1.15vw, 19px)' }}>
+            <p className="mt-4 mb-0 font-body font-normal text-[rgba(243,250,245,0.78)] max-w-[38ch]" style={{ fontSize: 'clamp(14px, 1.1vw, 18px)' }}>
               {BRAND.support}
             </p>
             <div className="auth-rule" aria-hidden />
           </div>
 
-          <section id="auth-form" className="bg-white rounded-2xl p-6 sm:p-7 mb-[max(1rem,var(--safe-bottom))] lg:mb-0 shadow-[0_24px_64px_rgba(0,0,0,0.35)] animate-fade-in">
+          <section id="auth-form" className="bg-white rounded-2xl p-6 sm:p-7 shadow-[0_24px_64px_rgba(0,0,0,0.35)] animate-fade-in">
             <div className="flex items-center gap-2 mb-1">
               <span className="w-7 h-7 rounded-md bg-[#0E1F1A]/10 grid place-items-center text-[#0E1F1A]">
                 <Lock size={14} />

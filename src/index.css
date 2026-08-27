@@ -578,6 +578,12 @@
     }
   }
 
+  .auth-screen {
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+
   .auth-scroll {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;

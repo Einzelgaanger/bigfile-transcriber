@@ -9,9 +9,16 @@ major_version = 17
 
 [auth]
 enable_signup = false
+site_url = "https://einzelgaanger.github.io/bigfile-transcriber"
+additional_redirect_urls = [
+  "http://127.0.0.1:18765",
+  "http://localhost:18765",
+  "https://einzelgaanger.github.io/bigfile-transcriber",
+]
 
 [auth.email]
 enable_signup = false
+enable_confirmations = false
 
 [functions.submit-transcription]
 verify_jwt = true

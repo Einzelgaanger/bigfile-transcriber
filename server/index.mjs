@@ -1,5 +1,8 @@
 import http from 'node:http';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { createReadStream, existsSync, statSync, unlink } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { extname, join, normalize, sep } from 'node:path';
 import {
   S3Client,
@@ -7,6 +10,9 @@ import {
   UploadPartCommand,
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  GetObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -35,6 +41,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL |
 const SUPABASE_ANON = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 
 const s3Enabled = Boolean(S3_ENDPOINT && S3_ACCESS_KEY && S3_SECRET_KEY);
+const ASR_MAX_BYTES = Math.floor(4.8 * 1024 * 1024 * 1024); // AssemblyAI /v2/transcript ~5 GB
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
+/** @type {Map<string, { status: string, audioKey?: string, error?: string }>} */
+const prepareJobs = new Map();
 
 function s3(endpoint) {
   return new S3Client({
@@ -94,6 +104,81 @@ async function requireUser(req) {
   return user?.id ? user : null;
 }
 
+function runFfmpeg(signedUrl, tmpFile) {
+  return new Promise((resolve, reject) => {
+    const ff = spawn('ffmpeg', [
+      '-hide_banner', '-nostdin', '-y',
+      '-i', signedUrl,
+      '-vn', '-ac', '1', '-c:a', 'aac', '-b:a', '64k',
+      '-movflags', '+faststart',
+      tmpFile,
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    ff.stderr.on('data', (d) => { err = (err + d).slice(-4000); });
+    const timer = setTimeout(() => {
+      ff.kill('SIGKILL');
+      reject(new Error('Audio extract timed out after 3 hours'));
+    }, 3 * 60 * 60 * 1000);
+    ff.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    ff.on('close', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(err.trim().slice(-800) || `ffmpeg exited ${code}`));
+    });
+  });
+}
+
+async function extractAudio(internalClient, key) {
+  const audioKey = `${key}.asr.m4a`;
+  const signedUrl = await getSignedUrl(
+    internalClient,
+    new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
+    { expiresIn: 6 * 3600 },
+  );
+  const tmpFile = join(tmpdir(), `${randomUUID()}.m4a`);
+  try {
+    await runFfmpeg(signedUrl, tmpFile);
+    const size = statSync(tmpFile).size;
+    if (!size) throw new Error('ffmpeg produced an empty audio file');
+    await internalClient.send(new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: audioKey,
+      Body: createReadStream(tmpFile),
+      ContentLength: size,
+      ContentType: 'audio/mp4',
+    }));
+    return audioKey;
+  } finally {
+    unlink(tmpFile, () => {});
+  }
+}
+
+async function startPrepare(internalClient, key, size) {
+  const existing = prepareJobs.get(key);
+  if (existing?.status === 'processing' || existing?.status === 'ready') return existing;
+
+  if (!size || size <= ASR_MAX_BYTES) {
+    const done = { status: 'ready', audioKey: key };
+    prepareJobs.set(key, done);
+    return done;
+  }
+
+  const job = { status: 'processing' };
+  prepareJobs.set(key, job);
+  extractAudio(internalClient, key)
+    .then((audioKey) => {
+      prepareJobs.set(key, { status: 'ready', audioKey });
+    })
+    .catch((err) => {
+      console.error('[prepare]', err);
+      prepareJobs.set(key, { status: 'error', error: err instanceof Error ? err.message : 'Audio extract failed' });
+    });
+  return job;
+}
+
 async function handleApi(req, res, url) {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
@@ -140,7 +225,7 @@ async function handleApi(req, res, url) {
       Key: key,
       ContentType: String(body.contentType || 'application/octet-stream'),
     }));
-    send(res, 200, { key, uploadId: created.UploadId });
+    send(res, 200, { key, uploadId: created.UploadId, maxBytes: MAX_UPLOAD_BYTES });
     return;
   }
 
@@ -159,7 +244,7 @@ async function handleApi(req, res, url) {
         UploadId: uploadId,
         PartNumber: partNumber,
       }),
-      { expiresIn: 3600 },
+      { expiresIn: 6 * 3600 },
     );
     send(res, 200, { url: urlSigned });
     return;
@@ -194,6 +279,33 @@ async function handleApi(req, res, url) {
       UploadId: String(body.uploadId || ''),
     })).catch(() => null);
     send(res, 200, { ok: true });
+    return;
+  }
+
+  if (url.pathname === '/api/s3/prepare' && req.method === 'POST') {
+    if (!key) {
+      send(res, 400, { error: 'key is required' });
+      return;
+    }
+    const cached = prepareJobs.get(key);
+    if (cached) {
+      send(res, 200, cached);
+      return;
+    }
+    let size = 0;
+    try {
+      const head = await internalClient.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+      size = Number(head.ContentLength || 0);
+    } catch (err) {
+      send(res, 400, { error: err instanceof Error ? err.message : 'Object not found' });
+      return;
+    }
+    if (size > MAX_UPLOAD_BYTES) {
+      send(res, 413, { status: 'error', error: 'File is larger than the 10 GB studio limit' });
+      return;
+    }
+    const job = await startPrepare(internalClient, key, size);
+    send(res, 200, job);
     return;
   }
 

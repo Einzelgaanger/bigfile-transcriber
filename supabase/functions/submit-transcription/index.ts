@@ -79,9 +79,12 @@ Deno.serve(async (req) => {
   if (!storagePath) return json(req, { error: "storagePath is required" }, 400);
   if (!storagePath.startsWith(`${userId}/`)) return json(req, { error: "Forbidden path" }, 403);
 
+  const audioPath = String(body.audioStoragePath ?? storagePath).trim();
+  if (!audioPath.startsWith(`${userId}/`)) return json(req, { error: "Forbidden audio path" }, 403);
+
   let audioUrl: string;
   try {
-    audioUrl = await signedAudioUrl(admin, storagePath);
+    audioUrl = await signedAudioUrl(admin, audioPath);
   } catch (err) {
     return json(req, { error: err instanceof Error ? err.message : "Could not sign object" }, 400);
   }

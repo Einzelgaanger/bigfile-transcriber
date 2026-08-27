@@ -4,7 +4,7 @@ export const BRAND = {
   lockup: 'BigFile Transcriber',
   tagline: 'Transcripts from files too large to send.',
   support:
-    'Upload audio or video up to 5 GB. Get a clean transcript and a downloadable PDF.',
+    'Upload audio or video up to 10 GB. Get a clean transcript and a downloadable PDF.',
 
   // Bare hex for jsPDF (no '#'). Forest / lime / mint from index.css — not the PortIQ navy/gold.
   NAVY: '0E1F1A',

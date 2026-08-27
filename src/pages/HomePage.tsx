@@ -55,7 +55,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
           <Reveal delay={2}>
             <aside>
               <p className="lead" style={{ maxWidth: '36ch' }}>
-                Resumable 6 MB chunks. Private bucket. Transcript plus an AI title and description as a downloadable PDF.
+                Resumable 64 MB parts into MinIO, up to 10 GB. Transcript plus an AI title and description as a downloadable PDF.
                 No dashboard collage on the first screen — one job, then the studio.
               </p>
             </aside>
@@ -139,7 +139,7 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
                 <h3>New job</h3>
                 <p>Resumable upload. Title and description are written from the transcript.</p>
                 <ul className="ticks">
-                  <li><span className="dot" /> Up to 5 GB on Pro storage</li>
+                  <li><span className="dot" /> Up to 10 GB on Coolify MinIO</li>
                   <li><span className="dot" /> mp4 · mp3 · wav · m4a</li>
                 </ul>
               </div>
@@ -165,8 +165,8 @@ export default function HomePage({ onSignIn, onEnter }: { onSignIn: () => void; 
         <div className="container">
           <p className="statement">Keep the <span className="lime">file</span>. Ship the words.</p>
           <div className="mk-metrics">
-            <div><strong>5 GB</strong><span>Designed file ceiling</span></div>
-            <div><strong>6 MB</strong><span>Resumable chunk size</span></div>
+            <div><strong>10 GB</strong><span>Upload ceiling</span></div>
+            <div><strong>64 MB</strong><span>Multipart part size</span></div>
             <div><strong>48 h</strong><span>Signed URL window</span></div>
           </div>
         </div>

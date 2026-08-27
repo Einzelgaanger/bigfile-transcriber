@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase, supabaseReady, type TranscriptionJob } from './lib/supabase';
-import { buildStoragePath, resumableUpload } from './lib/upload';
+import { buildStoragePath, MAX_UPLOAD_BYTES, prepareAudioForTranscription, resumableUpload } from './lib/upload';
 import { deliverTranscriptPdf } from './lib/pdf';
 import SetupEnv from './SetupEnv';
 import HomePage from './pages/HomePage';
@@ -69,6 +69,7 @@ function Studio({ user }: { user: { id: string; email: string } }) {
   const [view, setView] = useState<PortalView>('dashboard');
   const [file, setFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
+  const [phase, setPhase] = useState<'upload' | 'prepare' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [over, setOver] = useState(false);
   const [query, setQuery] = useState('');
@@ -171,16 +172,39 @@ function Studio({ user }: { user: { id: string; email: string } }) {
     return { completed, inflight, failed, minutes };
   }, [jobs, inflightJobs.length]);
 
+  const pickFile = (next: File | null) => {
+    if (!next) {
+      setFile(null);
+      return;
+    }
+    if (next.size > MAX_UPLOAD_BYTES) {
+      const msg = 'This file is larger than 10 GB. Split it or export a smaller copy first.';
+      setError(msg);
+      toast.error(msg);
+      return;
+    }
+    setError(null);
+    setFile(next);
+  };
+
   const submit = async () => {
     if (!file) return;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      pickFile(file);
+      return;
+    }
     setError(null);
     setProgress(0);
+    setPhase('upload');
     try {
       const path = buildStoragePath(user.id, file);
       await resumableUpload(file, path, setProgress);
+      setPhase('prepare');
+      const audioPath = await prepareAudioForTranscription(path);
       const { data, error: fnErr } = await supabase.functions.invoke('submit-transcription', {
         body: {
           storagePath: path,
+          audioStoragePath: audioPath,
           title: 'Transcribing…',
           fileName: file.name,
           sizeBytes: file.size,
@@ -202,6 +226,7 @@ function Studio({ user }: { user: { id: string; email: string } }) {
       toast.error(message);
     } finally {
       setProgress(null);
+      setPhase(null);
     }
   };
 
@@ -318,9 +343,9 @@ function Studio({ user }: { user: { id: string; email: string } }) {
 
       {view === 'upload' && (
         <div className="portal-page animate-fade-in">
-          <PageHeader title="New job" subtitle="Resumable upload — mp4, mp3, wav, m4a" />
+          <PageHeader title="New job" subtitle="Upload audio or video up to 10 GB" />
           <div className="portal-callout">
-            Large files upload in 6 MB chunks and resume if the connection drops. The media never leaves your storage until AssemblyAI fetches a signed URL.
+            Files go to MinIO in 64 MB parts. Over ~5 GB we extract a small audio track so AssemblyAI can transcribe it (their cap is 5 GB / 10 hours).
           </div>
           <section className="portal-section">
             <header className="portal-section__head">
@@ -340,7 +365,7 @@ function Studio({ user }: { user: { id: string; email: string } }) {
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click(); } }}
                   onDragOver={(e) => { e.preventDefault(); setOver(true); }}
                   onDragLeave={() => setOver(false)}
-                  onDrop={(e) => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files?.[0]; if (f) setFile(f); }}
+                  onDrop={(e) => { e.preventDefault(); setOver(false); pickFile(e.dataTransfer.files?.[0] ?? null); }}
                 >
                   <span className="mx-auto mb-2 w-7 h-7 rounded-md bg-[#D3F36B]/25 text-[#0E1F1A] grid place-items-center">
                     <UploadCloud size={16} />
@@ -357,22 +382,24 @@ function Studio({ user }: { user: { id: string; email: string } }) {
                     </>
                   )}
                 </div>
-                <input ref={inputRef} type="file" accept="audio/*,video/*" hidden aria-label="Choose a media file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                <input ref={inputRef} type="file" accept="audio/*,video/*" hidden aria-label="Choose a media file" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} />
               </div>
-              {progress !== null && (
+              {(progress !== null || phase === 'prepare') && (
                 <div className="mt-3">
                   <div className="flex justify-between text-[11px] font-semibold text-[#5A6B7D] mb-1">
-                    <span>Uploading</span>
-                    <span className="font-mono">{progress}%</span>
+                    <span>{phase === 'prepare' ? 'Preparing audio for transcription' : 'Uploading'}</span>
+                    <span className="font-mono">{phase === 'prepare' ? '…' : `${progress ?? 0}%`}</span>
                   </div>
-                  <div className="progress-track" aria-label={`Uploading ${progress}%`}><i style={{ width: `${progress}%` }} /></div>
+                  <div className="progress-track" aria-label={phase === 'prepare' ? 'Preparing audio' : `Uploading ${progress}%`}>
+                    <i style={{ width: phase === 'prepare' ? '100%' : `${progress ?? 0}%` }} />
+                  </div>
                 </div>
               )}
               {error && <p className="text-xs text-red-700 mt-2 mb-0">{error}</p>}
-              <button type="button" className="btn-primary mt-4" onClick={() => void submit()} disabled={!file || progress !== null}>
+              <button type="button" className="btn-primary mt-4" onClick={() => void submit()} disabled={!file || phase !== null}>
                 <FilePlus size={16} />
-                {progress !== null ? `Uploading ${progress}%` : 'Upload & transcribe'}
-                {progress === null ? <span className="btn-node ml-auto"><ArrowRight size={14} /></span> : null}
+                {phase === 'prepare' ? 'Preparing audio…' : phase === 'upload' ? `Uploading ${progress ?? 0}%` : 'Upload & transcribe'}
+                {phase === null ? <span className="btn-node ml-auto"><ArrowRight size={14} /></span> : null}
               </button>
             </div>
           </section>

@@ -3,8 +3,12 @@ import { supabase } from './supabase';
 
 const BUCKET = 'media-uploads';
 const CHUNK = 6 * 1024 * 1024; // Supabase resumable requires 6 MB chunks
-const S3_PART = 8 * 1024 * 1024;
-const S3_CONCURRENCY = 4;
+const S3_PART = 64 * 1024 * 1024; // 10 GB → ~160 parts (S3 max is 10,000)
+const S3_CONCURRENCY = 3;
+const PART_RETRIES = 4;
+
+/** Studio upload ceiling on Coolify/MinIO. AssemblyAI still caps STT at ~5 GB. */
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
 
 type S3Health = { ok?: boolean };
 
@@ -59,17 +63,25 @@ async function s3Multipart(
         if (partNumber > total) return;
         const start = (partNumber - 1) * S3_PART;
         const blob = file.slice(start, Math.min(start + S3_PART, file.size));
-        const { url } = await s3Api<{ url: string }>('/api/s3/sign-part', token, {
-          key,
-          uploadId,
-          partNumber,
-        });
-        const put = await fetch(url, { method: 'PUT', body: blob });
-        if (!put.ok) {
-          throw new Error(`Upload part ${partNumber} failed (${put.status})`);
+        let etag = '';
+        let lastErr: Error | null = null;
+        for (let attempt = 0; attempt < PART_RETRIES; attempt += 1) {
+          const { url } = await s3Api<{ url: string }>('/api/s3/sign-part', token, {
+            key,
+            uploadId,
+            partNumber,
+          });
+          const put = await fetch(url, { method: 'PUT', body: blob });
+          if (put.ok) {
+            etag = put.headers.get('etag') || put.headers.get('ETag') || '';
+            if (etag) break;
+            lastErr = new Error(`Upload part ${partNumber} is missing ETag`);
+          } else {
+            lastErr = new Error(`Upload part ${partNumber} failed (${put.status})`);
+          }
+          await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
         }
-        const etag = put.headers.get('etag') || put.headers.get('ETag');
-        if (!etag) throw new Error(`Upload part ${partNumber} is missing ETag`);
+        if (!etag) throw lastErr ?? new Error(`Upload part ${partNumber} failed`);
         parts.push({ etag, partNumber });
         sent += blob.size;
         onProgress(Math.min(100, Math.round((sent / file.size) * 100)));
@@ -149,4 +161,30 @@ export async function resumableUpload(
 export function buildStoragePath(userId: string, file: File) {
   const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
   return `${userId}/${Date.now()}_${safe}`;
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * For files over AssemblyAI's ~5 GB cap, Coolify extracts a small AAC track.
+ * Smaller files are sent as-is.
+ */
+export async function prepareAudioForTranscription(storagePath: string): Promise<string> {
+  if (!(await s3Available())) return storagePath;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error('No active session');
+
+  for (let i = 0; i < 5400; i += 1) {
+    const body = await s3Api<{ status: string; audioKey?: string; error?: string }>(
+      '/api/s3/prepare',
+      session.access_token,
+      { key: storagePath },
+    );
+    if (body.status === 'ready' && body.audioKey) return body.audioKey;
+    if (body.status === 'error') throw new Error(body.error || 'Audio extract failed');
+    await sleep(2000);
+  }
+  throw new Error('Audio extract timed out');
 }
